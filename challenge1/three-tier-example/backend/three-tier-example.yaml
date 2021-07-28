@@ -1,0 +1,178 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  three-tier-example
+
+  SAM Template for 
+  three-tier-example
+
+Parameters:
+  SiteBucketName:
+    Type: String
+    Description: "Bucket Name"
+  Region:
+    Type: String
+    Default: us-east-1
+  AWSEnv:
+    Type: String
+    Default: AWS
+
+
+Globals:
+    Function:
+      Timeout: 3
+    Api:
+      Cors:
+        AllowOrigin: "'*'"
+
+Resources:
+
+  S3BucketForWebsiteContent:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${SiteBucketName}
+      AccessControl: Private
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+      CorsConfiguration:
+        CorsRules:
+          -  AllowedHeaders: ['*']
+             AllowedMethods: ['GET']
+             AllowedOrigins: ['*']
+             Id: rule1
+             MaxAge: '3000'   
+    DeletionPolicy: Delete
+  
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3BucketForWebsiteContent
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${CloudFrontOriginIdentity}'
+            Action: 's3:GetObject'
+            Resource: !Join 
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3BucketForWebsiteContent
+                - /*
+
+  CloudFrontOriginIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Ref 'AWS::StackName'
+  
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - DomainName: !GetAtt S3BucketForWebsiteContent.RegionalDomainName
+            Id: !Ref S3BucketForWebsiteContent
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginIdentity}'
+        Enabled: 'true'
+        DefaultRootObject: 'index.html'
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - HEAD
+            - GET
+          TargetOriginId: !Ref S3BucketForWebsiteContent
+          ForwardedValues:
+            QueryString: 'false'
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: 'true'
+
+  GetPhoneNumberFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Zip
+      CodeUri: get_phone_number/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref PhoneNumbersTable
+      Environment:
+        Variables:
+          TABLE: !Ref PhoneNumbersTable
+          REGION: !Ref Region
+          AWSENV: !Ref AWSEnv
+      Events:
+        GetPhoneNumber:
+          Type: Api
+          Properties:
+            Path: /getphonenumber/{id}
+            Method: get
+      Layers:
+        - Ref: HelperLibraryLayer
+  
+  GetPhoneNumbersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Zip
+      CodeUri: get_phone_numbers/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName: !Ref PhoneNumbersTable
+      Environment:
+        Variables:
+          TABLE: !Ref PhoneNumbersTable
+          REGION: !Ref Region
+          AWSENV: !Ref AWSEnv
+      Events:
+        GetPhoneNumbers:
+              Type: Api
+              Properties:
+                Path: /getphonenumbers
+                Method: get
+      Layers:
+        - Ref: HelperLibraryLayer
+  
+  HelperLibraryLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: helper-library
+      Description: Helper Library
+      ContentUri: common
+      CompatibleRuntimes:
+        - python3.7
+    Metadata:
+      BuildMethod: python3.7
+
+  PhoneNumbersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: PhoneNumbers
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: phonenumber
+          KeyType: HASH
+        - AttributeName: name
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: phonenumber
+          AttributeType: S
+        - AttributeName: name
+          AttributeType: S
+
+Outputs:
+  DomainName:
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Description: DomainName for website hosted on Cloudfront
+  S3BucketName:
+    Value: !Ref S3BucketForWebsiteContent
+    Description: Name of S3 bucket to hold website content
+  GetPhoneNumberApi:
+    Description: "API Gateway endpoint URL for Prod stage for GetPhoneNumber function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/getphonenumbers/"

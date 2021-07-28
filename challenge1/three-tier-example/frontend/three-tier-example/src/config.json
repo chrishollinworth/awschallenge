@@ -1,0 +1,17 @@
+[
+    {
+        "OutputKey": "GetPhoneNumberApi",
+        "OutputValue": "https://dc0r420wv0.execute-api.us-east-1.amazonaws.com/Prod/getphonenumbers/",
+        "Description": "API Gateway endpoint URL for Prod stage for GetPhoneNumber function"
+    },
+    {
+        "OutputKey": "DomainName",
+        "OutputValue": "d2rvjydeo4sdep.cloudfront.net",
+        "Description": "DomainName for website hosted on Cloudfront"
+    },
+    {
+        "OutputKey": "S3BucketName",
+        "OutputValue": "testthreetier",
+        "Description": "Name of S3 bucket to hold website content"
+    }
+]
